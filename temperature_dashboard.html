@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Temperature Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.0/signalr.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .temperature-display {
+            text-align: center;
+            margin: 30px 0;
+            padding: 40px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 15px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .temperature-value {
+            font-size: 4em;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        .temperature-unit {
+            font-size: 1.5em;
+            opacity: 0.8;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin: 30px 0;
+            flex-wrap: wrap;
+        }
+        
+        input, button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        
+        input {
+            background: rgba(255, 255, 255, 0.9);
+            color: #333;
+            width: 120px;
+        }
+        
+        button {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a52);
+            color: white;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+        }
+        
+        .status {
+            text-align: center;
+            margin: 20px 0;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            font-size: 1.1em;
+        }
+        
+        .connected { color: #4ade80; }
+        .disconnected { color: #f87171; }
+        
+        .timestamp {
+            text-align: center;
+            opacity: 0.7;
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌡️ Temperature Dashboard</h1>
+        
+        <div class="temperature-display">
+            <div class="temperature-value" id="temperatureValue">--</div>
+            <div class="temperature-unit">°C</div>
+            <div class="timestamp" id="timestamp">Waiting for data...</div>
+        </div>
+        
+        <div class="status" id="connectionStatus">
+            <span class="disconnected">● Disconnected</span>
+        </div>
+        
+        <div class="controls">
+            <input type="number" id="tempInput" placeholder="25.0" step="0.1">
+            <button onclick="sendTemperature()">Send Temperature</button>
+            <button onclick="connectSignalR()">Reconnect</button>
+        </div>
+    </div>
+
+    <script>
+        let connection = null;
+        const FUNCTION_APP_URL = 'https://tempishigh.azurewebsites.net';
+        
+        // Update UI elements
+        function updateTemperature(temp, timestamp) {
+            document.getElementById('temperatureValue').textContent = temp.toFixed(1);
+            document.getElementById('timestamp').textContent = `Last update: ${new Date(timestamp).toLocaleTimeString()}`;
+        }
+        
+        function updateConnectionStatus(connected) {
+            const statusElement = document.getElementById('connectionStatus');
+            if (connected) {
+                statusElement.innerHTML = '<span class="connected">● Connected to SignalR</span>';
+            } else {
+                statusElement.innerHTML = '<span class="disconnected">● Disconnected</span>';
+            }
+        }
+        
+        // Send temperature via HTTP (for testing)
+        async function sendTemperature() {
+            const tempInput = document.getElementById('tempInput');
+            const temperature = parseFloat(tempInput.value) || 25.0;
+            
+            try {
+                const response = await fetch(`${FUNCTION_APP_URL}/api/temperature`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ temperature: temperature })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    updateTemperature(data.temperature, data.timestamp);
+                    console.log('Temperature sent successfully:', data);
+                } else {
+                    console.error('Failed to send temperature');
+                }
+            } catch (error) {
+                console.error('Error sending temperature:', error);
+            }
+        }
+        
+        // SignalR connection (simplified for now)
+        async function connectSignalR() {
+            try {
+                console.log('Attempting to connect to SignalR...');
+                updateConnectionStatus(false);
+                
+                // For now, just test the negotiate endpoint
+                const response = await fetch(`${FUNCTION_APP_URL}/api/negotiate`);
+                if (response.ok) {
+                    const negotiateData = await response.json();
+                    console.log('Negotiate successful:', negotiateData);
+                    updateConnectionStatus(true);
+                } else {
+                    console.error('Negotiate failed');
+                }
+                
+            } catch (error) {
+                console.error('SignalR connection error:', error);
+                updateConnectionStatus(false);
+            }
+        }
+        
+        // Initialize on page load
+        window.onload = function() {
+            // Test with initial temperature
+            updateTemperature(22.5, new Date().toISOString());
+            
+            // Try to connect to SignalR
+            connectSignalR();
+        };
+    </script>
+</body>
+</html>
